@@ -1,0 +1,236 @@
+import streamlit as st
+import pandas as pd
+import requests
+from utils.db_connection import HEADERS
+
+def normalize_overs(overs):
+
+    if overs in [None, "", "-", "NA"]:
+        return "-"
+
+    try:
+        overs = float(overs)
+
+        whole = int(overs)
+        balls = int(round((overs - whole) * 10))
+
+        if balls >= 6:
+            return f"{whole + 1}.0"
+
+        return f"{whole}.{balls}"
+
+    except Exception:
+        return "-"
+
+def get_scorecard(match_id):
+
+    url = f"https://cricbuzz-cricket.p.rapidapi.com/mcenter/v1/{match_id}/hscard"
+
+    try:
+        res = requests.get(url, headers=HEADERS, timeout=10)
+        res.raise_for_status()
+        return res.json()
+
+    except Exception as e:
+        return {"error": str(e)}
+
+def show():
+    st.title("🏏 LIVE Matches")
+
+    url = "https://cricbuzz-cricket.p.rapidapi.com/matches/v1/live"
+
+    try:
+        res = requests.get(url, headers=HEADERS, timeout=10)
+        res.raise_for_status()
+        data = res.json()
+    except Exception as e:
+        st.error(f"API Error: {e}")
+        return
+
+
+    live_matches = []
+
+
+    for t in data.get("typeMatches", []):
+        for series in t.get("seriesMatches", []):
+
+            wrapper = series.get("seriesAdWrapper")
+            if not wrapper:
+                continue
+
+            matches = wrapper.get("matches", [])
+
+            for m in matches:
+
+                info = m.get("matchInfo", {})
+                score = m.get("matchScore")  # may be None
+
+                team1 = info.get("team1", {}).get("teamName", "TBD")
+                team2 = info.get("team2", {}).get("teamName", "TBD")
+
+                live_matches.append({
+                    "id": info.get("matchId"),
+                    "teams": f"{team1} vs {team2}",
+                    "venue": info.get("venueInfo", {}).get("ground", "N/A"),
+                    "status": info.get("status", "No status"),
+                    "scoreBlock": score
+                })
+
+
+    if not live_matches:
+        st.error("⚠️ No matches found.")
+        return
+
+
+    match_list = [m["teams"] for m in live_matches]
+
+    selected = st.selectbox("Select Match", match_list)
+
+    match = live_matches[match_list.index(selected)]
+
+
+    st.markdown("### 📊 Score Overview")
+
+
+    ms = match["scoreBlock"]
+
+
+    # -----------------------------
+    # If score not available yet
+    # -----------------------------
+    if not ms:
+        st.info("📌 Score not available yet (Toss / Preview / Break)")
+
+        st.write(f"📢 **Status:** {match['status']}")
+        st.write(f"🏟 **Venue:** {match['venue']}")
+
+        return
+
+
+    rows = []
+
+    team1_name, team2_name = match["teams"].split(" vs ")
+
+
+    for tkey, tdata in ms.items():
+
+        if not isinstance(tdata, dict):
+            continue
+
+        for ikey, inng in tdata.items():
+
+            if not isinstance(inng, dict):
+                continue
+
+            team_name = team1_name if "team1" in tkey else team2_name
+
+            inning_number = int(ikey.replace("inngs", ""))
+
+
+            rows.append({
+                "Team": team_name,
+                "InningNum": inning_number,
+                "TeamOrder": 1 if team_name == team1_name else 2,
+                "Score": f"{inng.get('runs','-')}/{inng.get('wickets','-')} "
+                         f"({normalize_overs(inng.get('overs'))} ov)"
+
+            })
+
+
+    if not rows:
+        st.info("No innings data yet.")
+        return
+
+
+    rows = sorted(rows, key=lambda x: (x["InningNum"], x["TeamOrder"]))
+
+
+    df = pd.DataFrame(
+        [{"Team": r["Team"], "Score": r["Score"]} for r in rows]
+    )
+
+
+    st.dataframe(df, hide_index=True, width="stretch")
+
+    st.write(f"📢 **Status:** {match['status']}")
+    st.write(f"🏟 **Venue:** {match['venue']}")
+
+
+    # -----------------------------
+    # Scorecard Section
+    # -----------------------------
+    st.markdown("---")
+
+    with st.expander("📜 Show Full Scorecard"):
+
+
+        scorecard = get_scorecard(match["id"])
+
+
+        if "scorecard" not in scorecard:
+            st.warning("⚠️ Scorecard not available.")
+            return
+
+
+        innings_list = scorecard["scorecard"]
+
+        match_status = scorecard.get("status", "")
+
+
+        st.markdown(f"### Match Status: **{match_status}**")
+
+
+        for inng in innings_list:
+
+
+            team_name = inng.get("batteamname", "Unknown")
+            runs = inng.get("score", "-")
+            wickets = inng.get("wickets", "-")
+            overs = inng.get("overs", "-")
+
+
+            st.markdown(
+                f"#### 🏏 {team_name} – {runs}/{wickets} ({overs} ov)"
+            )
+
+
+            bat_rows = [
+                {
+                    "Batsman": p.get("name"),
+                    "Runs": p.get("runs"),
+                    "Balls": p.get("balls"),
+                    "4s": p.get("fours"),
+                    "6s": p.get("sixes"),
+                    "Strike Rate": p.get("strkrate"),
+                    "Dismissal": p.get("outdec")
+                }
+                for p in inng.get("batsman", [])
+            ]
+
+
+            if bat_rows:
+                st.dataframe(
+                    pd.DataFrame(bat_rows),
+                    hide_index=True,
+                    width="stretch"
+                )
+
+
+            bowl_rows = [
+                {
+                    "Bowler": p.get("name"),
+                    "Overs": p.get("overs"),
+                    "Runs": p.get("runs"),
+                    "Wickets": p.get("wickets"),
+                    "Economy": p.get("economy")
+                }
+                for p in inng.get("bowler", [])
+            ]
+
+
+            if bowl_rows:
+                st.dataframe(
+                    pd.DataFrame(bowl_rows),
+                    hide_index=True,
+                    width="stretch"
+                )
