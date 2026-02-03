@@ -77,5 +77,3 @@ Cricbuzz REST API → Python (Requests, JSON) → SQL Database → SQL Analytics
 - Interactive data visualization with Streamlit  
 - Full CRUD implementation with database connectivity  
 - End-to-end cricket analytics application development  
-
-=======
