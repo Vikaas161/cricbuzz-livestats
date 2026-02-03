@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # 🏏 Cricbuzz LiveStats: Real-Time Cricket Insights & SQL-Based Analytics
 
 ## 📌 Project Overview
@@ -80,5 +79,3 @@ Cricbuzz REST API → Python (Requests, JSON) → SQL Database → SQL Analytics
 - End-to-end cricket analytics application development  
 
 =======
-# cricbuzz-livestats
->>>>>>> 93bcb804599cfeb8ca2caa0c7fe91bef7d82e2f6
